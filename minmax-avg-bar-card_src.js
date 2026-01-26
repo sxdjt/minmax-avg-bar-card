@@ -38,8 +38,8 @@ const getEnergyDataCollection = (hass) => {
 };
 
 const STRINGS = {
-  cs: { missing: "Chybí konfigurace – zadej entitu.", min: "Min", max: "Max", avg: "Průměr", thresholds: "Barevné rozsahy (MAX)", add: "Přidat", remove: "Odebrat", lt: "méně než", color: "barva", months: "Měsíce", weeks: "Týdny", preset: "Přednastavený styl" },
-  en: { missing: "Missing config – provide an entity.", min: "Min", max: "Max", avg: "Avg", thresholds: "Color ranges (MAX)", add: "Add", remove: "Remove", lt: "less than", color: "color", months: "Months", weeks: "Weeks", preset: "Style Preset" },
+  cs: { missing: "Chybí konfigurace – zadej entitu.", min: "Min", max: "Max", avg: "Průměr", thresholds: "Barevné rozsahy", thresholds_by: "podle", add: "Přidat", remove: "Odebrat", lt: "méně než", color: "barva", months: "Měsíce", weeks: "Týdny", preset: "Přednastavený styl", color_by: "Barva podle", color_by_max: "Maximum", color_by_average: "Průměr", color_by_min: "Minimum" },
+  en: { missing: "Missing config – provide an entity.", min: "Min", max: "Max", avg: "Avg", thresholds: "Color ranges", thresholds_by: "by", add: "Add", remove: "Remove", lt: "less than", color: "color", months: "Months", weeks: "Weeks", preset: "Style Preset", color_by: "Color by", color_by_max: "Maximum", color_by_average: "Average", color_by_min: "Minimum" },
 };
 
 // -------------------- PRESETS DEFINITION --------------------
@@ -135,7 +135,7 @@ function niceTicks(minV, maxV, tickCount = 6) {
   return { min: niceMin, max: niceMax, step, ticks };
 }
 
-function colorForMax(v, thresholds) {
+function colorForValue(v, thresholds) {
   if (!isFinite(v)) return "var(--disabled-text-color)";
   const th = Array.isArray(thresholds) && thresholds.length ? thresholds : PRESETS.temperature;
   const sorted = th
@@ -331,6 +331,7 @@ class MinMaxAvgBarCard extends LitElement {
       show_y_unit: true,
       thresholds: PRESETS.temperature,
       preset: "temperature",
+      color_by: "max",
       listen_energy_date_selection: true,
       default_ws_period: "day",
       debug: false,
@@ -660,8 +661,9 @@ class MinMaxAvgBarCard extends LitElement {
     const ttTitle = isHoverValid ? formatRangeTitle(hoverPoint.start, binEnd, displayPeriod, dateFmt) : "";
     const fmtVal = (v) => (isFinite(v) ? Number(v).toFixed(decimals) : "–");
 
-    // Pass explicit thresholds
+    // Pass explicit thresholds and color_by setting
     const activeThresholds = Array.isArray(cfg.thresholds) ? cfg.thresholds : PRESETS.temperature;
+    const colorBy = ["max", "average", "min"].includes(cfg.color_by) ? cfg.color_by : "max";
 
     return html`
       <ha-card>
@@ -712,9 +714,11 @@ class MinMaxAvgBarCard extends LitElement {
                 const maxV = isFinite(p.max) ? p.max : null;
                 const avgV = isFinite(p.mean) ? p.mean : null;
                 if (minV == null || maxV == null) return nothing;
-                
+
                 const bx = x0 + i * barStep + barXPad;
-                const color = colorForMax(maxV, activeThresholds);
+                // Determine which value to use for color based on config
+                const colorValue = colorBy === "min" ? minV : (colorBy === "average" ? (avgV ?? maxV) : maxV);
+                const color = colorForValue(colorValue, activeThresholds);
                 const yTop = yFor(maxV);
                 const yBot = yFor(minV);
                 const h = Math.max(2, yBot - yTop);
@@ -791,34 +795,37 @@ class MinMaxAvgBarCardEditor extends LitElement {
   
   static get styles() { return css`:host { display:block; padding: 8px 0; } .section { margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px; } .th-head { display:flex; align-items:center; justify-content: space-between; margin-bottom: 8px; } .th-title { font-weight: 600; } .rows { display:flex; flex-direction: column; gap: 10px; } .row { display:grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: center; } .colorwrap { display:flex; align-items:center; gap: 10px; } .colorbox { width: 28px; height: 28px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.16); } input[type="color"] { width: 46px; height: 34px; padding: 0; border: none; background: transparent; }`; }
   
-  get _schema() { 
+  get _schema() {
       return [
-          { name: "name", selector: { text: {} } }, 
-          { name: "entity", selector: { entity: { domain: "sensor" } } }, 
-          { name: "height", selector: { number: { min: 240, max: 600, step: 10, mode: "box" } } }, 
-          { name: "preset", selector: { select: { mode: "dropdown", options: [{ value: "temperature", label: "Temperature (C)" }, { value: "temperature_f", label: "Temperature (F)" }, { value: "beaufort", label: "Wind (Beaufort)" }] } } }, 
-          { name: "decimals", selector: { number: { min: 0, max: 3, step: 1, mode: "box" } } }, 
+          { name: "name", selector: { text: {} } },
+          { name: "entity", selector: { entity: { domain: "sensor" } } },
+          { name: "height", selector: { number: { min: 240, max: 600, step: 10, mode: "box" } } },
+          { name: "preset", selector: { select: { mode: "dropdown", options: [{ value: "temperature", label: "Temperature (C)" }, { value: "temperature_f", label: "Temperature (F)" }, { value: "beaufort", label: "Wind (Beaufort)" }] } } },
+          { name: "color_by", selector: { select: { mode: "dropdown", options: [{ value: "max", label: "Maximum" }, { value: "average", label: "Average" }, { value: "min", label: "Minimum" }] } } },
+          { name: "decimals", selector: { number: { min: 0, max: 3, step: 1, mode: "box" } } },
           { name: "y_padding_ratio", selector: { number: { min: 0.00, max: 0.25, step: 0.01, mode: "box" } } },
           { name: "date_format", selector: { select: { mode: "dropdown", options: [{ value: "eu", label: "European (26. 1.)" }, { value: "intl", label: "International (26-Jan)" }] } } },
-          { name: "show_x_labels", selector: { boolean: {} } }, 
-          { name: "show_y_labels", selector: { boolean: {} } }, 
-          { name: "show_y_unit", selector: { boolean: {} } }, 
-          { name: "listen_energy_date_selection", selector: { boolean: {} } }, 
-          { name: "default_ws_period", selector: { select: { mode: "dropdown", options: [{ value: "hour", label: "hourly bins" }, { value: "day", label: "daily bins" }, { value: "week", label: "weekly bins" }, { value: "month", label: "monthly bins" }] } } }, 
+          { name: "show_x_labels", selector: { boolean: {} } },
+          { name: "show_y_labels", selector: { boolean: {} } },
+          { name: "show_y_unit", selector: { boolean: {} } },
+          { name: "listen_energy_date_selection", selector: { boolean: {} } },
+          { name: "default_ws_period", selector: { select: { mode: "dropdown", options: [{ value: "hour", label: "hourly bins" }, { value: "day", label: "daily bins" }, { value: "week", label: "weekly bins" }, { value: "month", label: "monthly bins" }] } } },
           { name: "debug", selector: { boolean: {} } }
-      ]; 
+      ];
   }
   
-  render() { 
-      if (!this.hass) return nothing; 
-      const i18n = STRINGS[this._config?.language || "cs"] || STRINGS.cs; 
-      const thresholds = this._config.thresholds || PRESETS.temperature; 
-      const hasHaColorPicker = !!customElements.get("ha-color-picker"); 
-      
+  render() {
+      if (!this.hass) return nothing;
+      const i18n = STRINGS[this._config?.language || "cs"] || STRINGS.cs;
+      const thresholds = this._config.thresholds || PRESETS.temperature;
+      const hasHaColorPicker = !!customElements.get("ha-color-picker");
+      const colorBy = this._config.color_by || "max";
+      const colorByLabel = colorBy === "min" ? i18n.color_by_min : (colorBy === "average" ? i18n.color_by_average : i18n.color_by_max);
+
       return html`
         <ha-form .hass=${this.hass} .data=${this._config} .schema=${this._schema} @value-changed=${this._valueChanged}></ha-form>
         <div class="section">
-            <div class="th-head"><div class="th-title">${i18n.thresholds}</div><mwc-button @click=${() => this._addThreshold()}>${i18n.add}</mwc-button></div>
+            <div class="th-head"><div class="th-title">${i18n.thresholds} (${i18n.thresholds_by} ${colorByLabel})</div><mwc-button @click=${() => this._addThreshold()}>${i18n.add}</mwc-button></div>
             <div class="rows">
                 ${thresholds.map((t, idx) => { 
                     const col = t.color || ""; 
